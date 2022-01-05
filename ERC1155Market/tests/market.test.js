@@ -40,9 +40,6 @@ describe("Market Contract Transactions", () => {
       mintingPrice = await hardhatMarket.getMintingPrice();
       expect(!!listingPrice).to.equal(true);
       expect(!!mintingPrice).to.equal(true);
-      // listingPrice = ethers.utils.parseUnits(listingPrice, "ether");
-      // mintingPrice = ethers.utils.parseUnits(mintingPrice, "ether");
-      console.log("TESTING", listingPrice, mintingPrice);
    });
 
    describe("ERC1155 Token Creation", () => {
@@ -65,7 +62,7 @@ describe("Market Contract Transactions", () => {
 
          let success;
          try {
-            await hardhatMarket.setTokenURI(1, metaDataUri);
+            await hardhatMarket.setTokenURI(2, metaDataUri);
             success = true;
          } catch {
             success = false;
@@ -78,27 +75,27 @@ describe("Market Contract Transactions", () => {
       let transaction;
       beforeEach(async () => {
          await hardhatMarket.mint(NON_FUNGIBLE, tokenUri, []);
-         transaction = await hardhatMarket.createCollection(1);
+         transaction = await hardhatMarket.createCollection(2);
          transaction = await transaction.wait();
       });
       it("Can be created", async () => {
          expect(transaction.events[1].args.length).to.equal(5);
       });
       it("Can be retrieved by id", async () => {
-         const id = 0;
+         const id = 1;
          const createdCollection = await hardhatMarket.getCollection(id);
          expect(createdCollection.collectionId).to.equal(id);
       });
       it("Can add items to collections", async () => {
-         const id = 0;
+         const id = 1;
          const itemId = 424242;
-         await hardhatMarket.connect(owner).addItemToCollection(id, itemId);
+         await hardhatMarket.addItemToCollection(id, itemId);
          const collectionWithItem = await hardhatMarket.getCollection(id);
          expect(collectionWithItem.itemsInCollection).to.equal(1);
       });
       it("Can retrieve all collections", async () => {
          const collections = await hardhatMarket.fetchMarketCollections();
-         expect(collections.length).to.equal(1);
+         expect(collections.length).to.equal(2);
       });
       it("Can retrieve all collections mapped to sender address", async () => {
          const collections = await hardhatMarket.fetchMyCollections();
@@ -112,7 +109,7 @@ describe("Market Contract Transactions", () => {
       const tokenPrice = 42;
       beforeEach(async () => {
          await hardhatMarket.mint(NON_FUNGIBLE, tokenUri, []);
-         transaction = await hardhatMarket.createItem(1, tokenPrice);
+         transaction = await hardhatMarket.createItem(2, tokenPrice, 0);
          transaction = await transaction.wait();
       });
       it("Can be created", async () => {
@@ -124,15 +121,17 @@ describe("Market Contract Transactions", () => {
             itemId,
             tokenId,
             price,
+            associatedCollectionId,
          ] = transaction.events[1].args;
 
          expect(sold).to.equal(false);
          expect(forSale).to.equal(false);
          expect(sellerAddress).to.equal(owner.address);
          expect(ownerAddress).to.equal(BLANK_ADDRESS);
-         expect(itemId).to.equal(1);
-         expect(tokenId).to.equal(1);
+         expect(itemId).to.equal(2);
+         expect(Number(tokenId)).to.equal(2);
          expect(price).to.equal(tokenPrice);
+         expect(associatedCollectionId).to.equal(0);
          _itemId = itemId;
       });
       it("Can be retrieved by id", async () => {
@@ -171,7 +170,7 @@ describe("Market Contract Transactions", () => {
       });
       it("Can retrieve all Items on market", async () => {
          const items = await hardhatMarket.fetchMarketItems();
-         expect(items.length).to.equal(1);
+         expect(items.length).to.equal(2);
       });
       it("Can retrieve all collections mapped to sender address", async () => {
          const collections = await hardhatMarket.fetchMyItems();
