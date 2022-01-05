@@ -4,14 +4,14 @@ pragma solidity ^0.8.2;
 import "hardhat/console.sol";
 import "@openzeppelin/contracts/utils/Counters.sol";
 import "@openzeppelin/contracts/utils/Strings.sol";
-import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
+import "@openzeppelin/contracts/security/ReentrancyGuard.sol"; // Todo only use contracts-upgradeable?
 import "@openzeppelin/contracts-upgradeable/token/ERC1155/ERC1155Upgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/token/ERC1155/extensions/ERC1155BurnableUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/token/ERC1155/extensions/ERC1155SupplyUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 
-contract ERC1155Market is
+contract HotSwapMarket is
     ReentrancyGuard,
     Initializable,
     ERC1155Upgradeable,
@@ -44,6 +44,7 @@ contract ERC1155Market is
         uint256 itemId;
         uint256 tokenId;
         uint256 price;
+        uint256 associatedCollectionId;
     }
     struct Collection {
         address payable owner;
@@ -55,7 +56,7 @@ contract ERC1155Market is
 
     /// @custom:oz-upgrades-unsafe-allow constructor
     constructor() initializer {
-        contractAddress = payable(msg.sender);
+        initialize();
     }
 
     function initialize() public initializer {
@@ -63,6 +64,13 @@ contract ERC1155Market is
         __Ownable_init();
         __ERC1155Burnable_init();
         __ERC1155Supply_init();
+
+        contractAddress = payable(msg.sender);
+
+        // Increment counters we dont want to start at 0 in constuctor
+        _collectionIds.increment();
+        _itemIds.increment();
+        _tokenIds.increment();
     }
 
     // mappings
@@ -80,7 +88,8 @@ contract ERC1155Market is
         bool sold,
         uint256 indexed itemId,
         uint256 indexed tokenId,
-        uint256 price
+        uint256 price,
+        uint256 associatedCollectionId
     );
     event CollectionCreated(
         address owner,
@@ -90,43 +99,9 @@ contract ERC1155Market is
         uint256 itemsInCollection
     );
 
-    // Create market item with minted token
-    function createItem(uint256 tokenId, uint256 price)
-        public
-        payable
-        nonReentrant
-        returns (uint256)
-    {
-        _itemIds.increment();
-        uint256 itemId = _itemIds.current();
-        uint256 itemPrice = 0;
-        if (price > 0) {
-            itemPrice = price;
-        }
-
-        idToItem[itemId] = MarketItem(
-            payable(msg.sender),
-            payable(address(0)),
-            false,
-            false,
-            itemId,
-            tokenId,
-            price
-        );
-
-        safeTransferFrom(msg.sender, address(this), tokenId, 1, "");
-
-        emit MarketItemCreated(
-            msg.sender,
-            address(0),
-            false,
-            false,
-            itemId,
-            tokenId,
-            price
-        );
-        return itemId;
-    }
+    //
+    //  COLLECTION FUNCTIONS
+    //
 
     // Mints collection token and adds collection to market
     function createCollection(uint256 tokenId) public returns (uint256) {
@@ -156,7 +131,12 @@ contract ERC1155Market is
             idToCollection[collectionId].owner == msg.sender,
             "Must be collection owner"
         );
+        require(
+            idToItem[itemId].associatedCollectionId == 0,
+            "Item already in a collection"
+        );
 
+        idToItem[itemId].associatedCollectionId = collectionId;
         IdToCollectionToItems[collectionId][itemId] = itemId;
         idToCollection[collectionId].itemsInCollection++;
     }
@@ -174,7 +154,12 @@ contract ERC1155Market is
             idToCollection[collectionId].owner == msg.sender,
             "Must be collection owner"
         );
+        require(
+            idToItem[itemId].associatedCollectionId > 0,
+            "Item not in a collection"
+        );
 
+        idToItem[itemId].associatedCollectionId = 0;
         delete IdToCollectionToItems[collectionId][itemId];
         idToCollection[collectionId].itemsInCollection--;
     }
@@ -219,6 +204,53 @@ contract ERC1155Market is
         );
 
         return idToCollection[collectionId].itemsInCollection;
+    }
+
+    //
+    //  ITEM FUNCTIONS
+    //
+
+    // Create market item with minted token
+    function createItem(
+        uint256 tokenId,
+        uint256 price,
+        uint256 collectionId
+    ) public payable nonReentrant returns (uint256) {
+        _itemIds.increment();
+        uint256 itemId = _itemIds.current();
+        uint256 itemPrice;
+        uint256 associatedCollectionId;
+        if (price > 0) {
+            itemPrice = price;
+        }
+        if (price > 0) {
+            associatedCollectionId = collectionId;
+        }
+
+        idToItem[itemId] = MarketItem(
+            payable(msg.sender),
+            payable(address(0)),
+            false,
+            false,
+            itemId,
+            tokenId,
+            price,
+            associatedCollectionId
+        );
+
+        safeTransferFrom(msg.sender, address(this), tokenId, 1, "");
+
+        emit MarketItemCreated(
+            msg.sender,
+            address(0),
+            false,
+            false,
+            itemId,
+            tokenId,
+            price,
+            associatedCollectionId
+        );
+        return itemId;
     }
 
     // Gets item at passed itemId
@@ -271,6 +303,10 @@ contract ERC1155Market is
         _itemsSold.increment();
         payable(contractAddress).transfer(listingPrice);
     }
+
+    //
+    //  FETCHING FUNCTIONS FOR COLLECTIONS AND ITEMS
+    //
 
     // Fetchs all items on the market
     function fetchMarketItems() public view returns (MarketItem[] memory) {
@@ -359,6 +395,10 @@ contract ERC1155Market is
         }
         return myItems;
     }
+
+    //
+    //  CONTRACT UTILS
+    //
 
     // Returns uri of token id, for fetching metaData
     function contractOwner() public view returns (address) {
